@@ -1,26 +1,143 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  LocalLoop design language: warm, human, local, trustworthy.
+  Earthy base, one clay accent, one moss accent. No corporate gradients.
+*/
+@theme {
+  --color-cream: #fbf7f1;
+  --color-parchment: #f2eadd;
+  --color-ink: #241c15;
+  --color-muted: #6f6255;
+  --color-line: #e6dccd;
+  --color-clay: #c4552b;
+  --color-clay-dark: #9e3f1c;
+  --color-clay-soft: #f7e6dc;
+  --color-moss: #2f6b4f;
+  --color-moss-soft: #e2efe6;
+  --color-honey: #d9962e;
+  --color-honey-soft: #fbf0d9;
+
+  --font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-clay);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .ll-card {
+    background: #fff;
+    border: 1px solid var(--color-line);
+    border-radius: 1.25rem;
+    box-shadow: 0 1px 2px rgba(36, 28, 21, 0.04);
+  }
+  .ll-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.7rem 1.15rem;
+    font-weight: 600;
+    font-size: 0.925rem;
+    line-height: 1;
+    transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .ll-btn:active {
+    transform: translateY(1px);
+  }
+  .ll-btn-primary {
+    background: var(--color-clay);
+    color: #fff;
+  }
+  .ll-btn-primary:hover {
+    background: var(--color-clay-dark);
+  }
+  .ll-btn-ghost {
+    background: #fff;
+    border-color: var(--color-line);
+    color: var(--color-ink);
+  }
+  .ll-btn-ghost:hover {
+    border-color: var(--color-clay);
+    color: var(--color-clay);
+  }
+  .ll-btn-moss {
+    background: var(--color-moss);
+    color: #fff;
+  }
+  .ll-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-line);
+    background: #fff;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-muted);
+    white-space: nowrap;
+  }
+  .ll-chip-active {
+    background: var(--color-ink);
+    border-color: var(--color-ink);
+    color: #fff;
+  }
+  .ll-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .ll-input {
+    width: 100%;
+    border-radius: 0.85rem;
+    border: 1px solid var(--color-line);
+    background: #fff;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.95rem;
+    color: var(--color-ink);
+  }
+  .ll-input:focus {
+    border-color: var(--color-clay);
+    outline: none;
+  }
+  .ll-photo-fallback {
+    background-image: radial-gradient(circle at 20% 25%, rgba(255, 255, 255, 0.5), transparent 55%),
+      linear-gradient(135deg, #e8c9a8 0%, #c4552b 55%, #7d3a1e 100%);
+  }
+}
+
+/* Leaflet is bundled from npm; keep its panes under our own UI chrome. */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #e8e0d4;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 14px;
 }
