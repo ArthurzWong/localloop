@@ -35,8 +35,10 @@ export async function POST(request: Request) {
   const now = new Date();
   const rows = queryBusinesses({}, origin, now);
   const parsed = parseQuestion(question);
-  // A meal question needs the whole food list, not just the top-ranked places.
-  const candidates = assistantCandidates(rows, origin, parsed.meal ? 30 : 16, parsed.meal ? "eat" : undefined);
+  // A category or meal question needs that category's full list, not just the
+  // top-ranked places overall.
+  const wanted = parsed.meal ? "eat" : parsed.category;
+  const candidates = assistantCandidates(rows, origin, wanted ? 30 : 16, wanted);
 
   const fallback = answerFromCatalogue(question, candidates, { originLabel: "Riverstone" });
 

@@ -88,8 +88,20 @@ deterministic retrieval engine.
 Regenerate the PWA icons (standard library only, no Pillow):
 
 ```bash
-python3 scripts/make-icons.py
+python3 scripts/make-icons.py     # or: npm run icons
 ```
+
+Check the assistant's intent handling against the demo catalogue:
+
+```bash
+npm run check:assistant
+```
+
+The assistant resolves a question into signals before it ranks anything — meal, category,
+budget, dietary needs, walking preference. Category and meal words are matched on **word
+boundaries**, so "a shopping mall" is not read as a request to go shopping, and
+"walk and eat" resolves to food rather than a hiking trail. A stated budget is treated as a
+constraint (a RM30–180 studio is filtered out of an RM30 answer), not as a soft preference.
 
 ---
 

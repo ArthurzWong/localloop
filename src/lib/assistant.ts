@@ -1,6 +1,6 @@
 import { haversineKm, formatDistance, walkingMinutes } from "./geo";
 import { cappedLocalScore, TRUST_LABELS } from "./score";
-import type { Business, RankedBusiness } from "./types";
+import type { Business, IntentKey, RankedBusiness } from "./types";
 
 /**
  * TOURIST ASSISTANT
@@ -58,6 +58,8 @@ interface Parsed {
   keywords: string[];
   wantsWalk: boolean;
   meal?: "breakfast" | "lunch" | "dinner" | "dessert" | "coffee";
+  /** Which discovery category the question is really about, if any. */
+  category?: IntentKey;
   dietary: string[];
 }
 
@@ -75,14 +77,50 @@ const MEALS: Record<string, Parsed["meal"]> = {
   kopi: "coffee",
 };
 
+/**
+ * Words that reveal which category the visitor means, in priority order.
+ * Matched on word boundaries on purpose: "a shopping mall" is not a request to
+ * go shopping, and "walk and eat" is a request for food, not a hiking trail.
+ */
+const CATEGORY_WORDS: { category: IntentKey; words: string[] }[] = [
+  {
+    category: "eat",
+    words: ["eat", "eating", "food", "meal", "hungry", "snack", "noodle", "noodles", "rice", "restaurant", "cafe", "stall", "drink", "drinks", "dessert", "coffee", "kopi"],
+  },
+  { category: "shop", words: ["shop", "shops", "buy", "buying", "craft", "crafts", "handicraft", "batik", "souvenir", "souvenirs", "gift", "gifts", "market"] },
+  { category: "stay", words: ["stay", "sleep", "hotel", "hostel", "homestay", "guesthouse", "room", "rooms", "accommodation", "bed"] },
+  { category: "experience", words: ["experience", "class", "classes", "workshop", "tour", "guide", "guided", "learn", "cook", "cooking", "activity", "activities", "trip"] },
+  { category: "buy", words: ["present", "presents", "takehome"] },
+  { category: "explore", words: ["walk", "walking", "trail", "hike", "hiking", "nature", "explore", "sight", "sights", "view", "views", "park", "river", "beach", "lookout", "boardwalk", "culture", "history", "museum", "photography"] },
+];
+
 const DIETARY = ["vegan", "vegetarian", "halal", "spicy", "seafood"];
+
+/** Word-boundary match so "shopping mall" cannot be read as "shop". */
+function hasWord(haystack: string, word: string): boolean {
+  return new RegExp(`(^|[^a-z])${word}([^a-z]|$)`).test(haystack);
+}
+
+/** Lowest and highest figure in a listed price range. "Free" yields 0/0. */
+function priceBounds(b: Business): { min: number; max: number } {
+  const nums = (b.priceRange.match(/\d+/g) ?? []).map(Number);
+  if (nums.length === 0) return { min: 0, max: 0 };
+  return { min: Math.min(...nums), max: Math.max(...nums) };
+}
+
+function detectCategory(lower: string): IntentKey | undefined {
+  for (const { category, words } of CATEGORY_WORDS) {
+    if (words.some((w) => hasWord(lower, w))) return category;
+  }
+  return undefined;
+}
 
 export function parseQuestion(q: string): Parsed {
   const lower = q.toLowerCase();
   const budgetMatch = lower.match(/(?:rm|myr|\$)\s?(\d+)/) ?? lower.match(/(\d+)\s?(?:ringgit|bucks)/);
   const timeMatch = lower.match(/(\d+)\s?(?:hour|hr)/);
   const minMatch = lower.match(/(\d+)\s?(?:minute|min)/);
-  const mealKey = Object.keys(MEALS).find((k) => lower.includes(k));
+  const mealKey = Object.keys(MEALS).find((k) => hasWord(lower, k));
   const keywords = lower
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
@@ -91,9 +129,10 @@ export function parseQuestion(q: string): Parsed {
     budget: budgetMatch ? Number(budgetMatch[1]) : undefined,
     minutes: timeMatch ? Number(timeMatch[1]) * 60 : minMatch ? Number(minMatch[1]) : undefined,
     keywords,
-    wantsWalk: /walk|on foot|stroll/.test(lower),
+    wantsWalk: hasWord(lower, "walk") || /on foot|stroll/.test(lower),
     meal: mealKey ? MEALS[mealKey] : undefined,
-    dietary: DIETARY.filter((d) => lower.includes(d)),
+    category: mealKey ? "eat" : detectCategory(lower),
+    dietary: DIETARY.filter((d) => hasWord(lower, d)),
   };
 }
 
@@ -113,8 +152,12 @@ function scoreCandidate(b: Business, parsed: Parsed, distanceKm: number, openNow
 
   const haystack = [b.name, b.description, b.whatsLocal, ...b.tags, ...b.products].join(" ").toLowerCase();
 
-  // A stated meal intent is the strongest signal there is. Asking for breakfast
+  // A stated category intent is the strongest signal there is. Asking to eat
   // must never surface a rattan workshop because it happens to score well.
+  if (parsed.category) {
+    if (b.categorySlug !== parsed.category) s -= 45;
+    else s += 20;
+  }
   if (parsed.meal) {
     if (b.categorySlug !== "eat") s -= 45;
     if (b.tags.includes(parsed.meal)) s += 40;
@@ -122,13 +165,14 @@ function scoreCandidate(b: Business, parsed: Parsed, distanceKm: number, openNow
   }
   if (parsed.wantsWalk && distanceKm <= 1.2) s += 8;
   if (parsed.budget) {
-    const nums = (b.priceRange.match(/\d+/g) ?? []).map(Number);
-    const max = nums.length ? Math.max(...nums) : 0;
-    if (max && max <= parsed.budget) s += 12;
-    else if (max && max <= parsed.budget * 1.4) s += 3;
-    else s -= 10;
+    // Affordability decides it: a visitor with RM30 cannot use a RM90 trip,
+    // and "most expensive item is within budget" beats "cheapest item is".
+    const { min, max } = priceBounds(b);
+    if (max && max <= parsed.budget) s += 14;
+    else if (min && min <= parsed.budget) s += 4;
+    else s -= 35;
   }
-  for (const d of parsed.dietary) if (haystack.includes(d)) s += 8;
+  for (const d of parsed.dietary) if (hasWord(haystack, d)) s += 8;
   for (const k of parsed.keywords) if (haystack.includes(k)) s += 6;
   return s;
 }
@@ -156,11 +200,27 @@ export function answerFromCatalogue(
   );
   let pool = verified.length >= 3 ? verified : scored;
 
-  // Honour an explicit meal intent: only food listings can answer "breakfast".
-  if (parsed.meal) {
-    const food = pool.filter((c) => c.business.categorySlug === "eat");
-    if (food.length > 0) pool = food;
+  // Honour a stated category: only food listings can answer "breakfast", and a
+  // request to eat should not be answered with a walking trail.
+  const wantCategory = parsed.meal ? "eat" : parsed.category;
+  if (wantCategory) {
+    const inCategory = pool.filter((c) => c.business.categorySlug === wantCategory);
+    if (inCategory.length > 0) pool = inCategory;
   }
+
+  // A stated budget is a constraint, not a preference. Showing a RM30–180
+  // pottery studio to someone with RM30 is not a helpful answer.
+  if (parsed.budget) {
+    const budget = parsed.budget;
+    const affordable = pool.filter((c) => priceBounds(c.business).max <= budget);
+    if (affordable.length >= 2) {
+      pool = affordable;
+    } else {
+      const partlyAffordable = pool.filter((c) => priceBounds(c.business).min <= budget);
+      if (partlyAffordable.length >= 2) pool = partlyAffordable;
+    }
+  }
+
   const top = pool.slice(0, 3);
 
   if (top.length === 0) {
@@ -216,6 +276,12 @@ function buildLead(
   else if (parsed.meal === "dinner") parts.push(`For dinner${where}`);
   else if (parsed.meal === "coffee") parts.push(`For a proper local coffee${where}`);
   else if (parsed.meal === "dessert") parts.push(`For something sweet${where}`);
+  else if (parsed.category === "eat") parts.push(`For local food${where}`);
+  else if (parsed.category === "shop") parts.push(`For locally made things${where}`);
+  else if (parsed.category === "stay") parts.push(`For somewhere local to stay${where}`);
+  else if (parsed.category === "experience") parts.push(`For a local experience${where}`);
+  else if (parsed.category === "explore") parts.push(`For local places to explore${where}`);
+  else if (parsed.category === "buy") parts.push(`For something made here to take home${where}`);
   else parts.push(`Based on what is actually in the database${where}`);
   parts.push(`the strongest local-value option is ${best.name}.`);
   if (parsed.budget) parts.push(`I kept it inside RM${parsed.budget}.`);
